@@ -58,3 +58,4 @@ class DatabaseHandler:
             # Dispose of the engine
             self.engine.dispose()
             print("Database connection closed.")
+            

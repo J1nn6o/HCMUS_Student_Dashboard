@@ -12,10 +12,6 @@ env/
 .idea/
 .DS_Store
 
-# Data & logs
-logs/
-*.log
-
 # Docker
 *.pid
 

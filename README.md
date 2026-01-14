@@ -99,6 +99,7 @@ Or use psql inside container (if you prefer CLI)
 > Notes:
 > - Ensure all CSV files exist under data/ and match the table columns.
 > - Some dashboards depend on tables/views used in queries inside utils/constant.py (GPA-related queries are defined there).
+
 Run the Dashboard (Local)
 1) Install dependencies:
 pip install -r requirements.txt

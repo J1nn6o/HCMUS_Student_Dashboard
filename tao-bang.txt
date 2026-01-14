@@ -1,0 +1,301 @@
+create table course_id (
+	course_id CHAR(8) PRIMARY KEY,
+	course_name VARCHAR(100) NOT NULL
+);
+
+COPY course_id (course_id, course_name)
+FROM '/var/lib/postgresql/data_files/course_id.csv'
+DELIMITER ',' CSV HEADER;
+
+create table field (
+	field_id CHAR(2) PRIMARY KEY,
+	field_name VARCHAR(100) NOT NULL
+);
+
+COPY  field (field_id,field_name)
+FROM '/var/lib/postgresql/data_files/field.csv'
+DELIMITER ',' CSV HEADER;
+
+create table subfield (
+	field_id CHAR(2) NOT NULL,
+	subfield_id CHAR(4) PRIMARY KEY,
+	subfield_name VARCHAR(100) NOT NULL,
+	Foreign key (field_id) references field(field_id)
+);
+
+COPY  subfield (field_id, subfield_id, subfield_name)
+FROM '/var/lib/postgresql/data_files/subfield.csv'
+DELIMITER ',' CSV HEADER;
+
+create table major (
+	field_id CHAR(2) NOT NULL,
+	subfield_id CHAR(4) NOT NULL,
+	major_id CHAR(6) PRIMARY KEY,
+	major_name VARCHAR(100) NOT NULL,
+	Foreign key (field_id) references field(field_id),
+	Foreign key (subfield_id) references subfield(subfield_id)
+);
+ 
+COPY  major (field_id, subfield_id, major_id, major_name)
+FROM '/var/lib/postgresql/data_files/major.csv'
+DELIMITER ',' CSV HEADER;
+
+create table year (
+	school_year VARCHAR(11) PRIMARY KEY
+);
+ 
+COPY  year (school_year)
+FROM '/var/lib/postgresql/data_files/year.csv'
+DELIMITER ',' CSV HEADER;
+
+create table stage (
+	stage_num INT PRIMARY KEY
+);
+ 
+COPY  stage (stage_num)
+FROM '/var/lib/postgresql/data_files/stage.csv'
+DELIMITER ',' CSV HEADER;
+
+create table form_of_application (
+	application_id CHAR(4) PRIMARY KEY,
+	application_name VARCHAR(100) NOT NULL
+);
+ 
+COPY  form_of_application (application_id, application_name)
+FROM '/var/lib/postgresql/data_files/form_of_application.csv'
+DELIMITER ',' CSV HEADER;
+
+create table student (
+	student_id char(8) primary key,
+	gender varchar(3) not null,
+	academic_degree varchar(10) not null,
+	field_id char(2),
+	subfield_id char(4),
+	major_id char(6),
+	application_id char(4) not null,
+	foreign key (application_id) references form_of_application(application_id),
+	highschool_name varchar(200) not null,
+	honor_program varchar(5),
+	school_year varchar(11) not null
+);
+
+COPY  student(student_id, gender, academic_degree, field_id, subfield_id, major_id, application_id, highschool_name, honor_program, school_year)
+FROM '/var/lib/postgresql/data_files/student.csv'
+DELIMITER ',' CSV HEADER;
+
+create table student_performance (
+	school_year VARCHAR(11) NOT NULL,
+	Foreign key (school_year) references year(school_year),
+	semester CHAR(3) NOT NULL,
+	student_id CHAR(8) NOT NULL,
+	foreign key (student_id) references student(student_id),
+	field_id CHAR(2),
+	subfield_id char(4),
+	major_id char(6),
+	status varchar(20) not null
+);
+
+COPY  student_performance (school_year, semester, student_id, field_id, subfield_id, major_id, status)
+FROM '/var/lib/postgresql/data_files/student_performance.csv'
+DELIMITER ',' CSV HEADER;
+
+create table course (
+	course_id varchar(8) not null,
+	foreign key (course_id) references course_id(course_id),
+	course_name varchar(100) not null,
+	credits int default(0),
+	theoretical_credits int default(0),
+	practical_credits int default(0),
+	stage int not null,
+	foreign key (stage) references stage(stage_num),
+	optional_11 char(2) not null,
+	optional_28 char(2) not null,
+	compulsory_for_specific_11 varchar(100),
+	course_group varchar(100),
+	constraint double_pk unique(course_id, stage)
+);
+
+COPY  course(course_id, course_name, credits, theoretical_credits, practical_credits, stage, optional_11, optional_28, compulsory_for_specific_11, course_group)
+FROM '/var/lib/postgresql/data_files/course.csv'
+DELIMITER ',' CSV HEADER;
+
+create table grade(
+	school_year VARCHAR(11) NOT NULL,
+	Foreign key (school_year) references year(school_year),
+	semester CHAR(3) NOT NULL,
+	course_id VARCHAR(8) NOT NULL,
+	foreign key (course_id) references course_id(course_id),
+	student_id CHAR(8) NOT NULL,
+	foreign key (student_id) references student(student_id),
+	final_score numeric(5,2)
+);
+
+COPY  grade(school_year, semester, course_id, student_id, final_score)
+FROM '/var/lib/postgresql/data_files/grade.csv'
+DELIMITER ',' CSV HEADER;
+
+ALTER TABLE grade
+ADD CONSTRAINT grade_pkey PRIMARY KEY (school_year, semester, course_id, student_id);
+/* ------------------------------------ */
+
+DROP FUNCTION IF EXISTS calculate_gpa(VARCHAR, VARCHAR);
+
+CREATE OR REPLACE FUNCTION calculate_gpa(
+	school_year_param VARCHAR[],
+	student_pattern VARCHAR
+)
+RETURNS TABLE(
+	student_id CHAR(8), 
+	gpa FLOAT, 
+	gpa_status VARCHAR
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	RETURN QUERY 
+	SELECT 
+		g.student_id,
+		ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT AS gpa,
+		(CASE 
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 5.0 
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa<5'
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT >= 5.0 
+				AND ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 7.0
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=5_and_<7'
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT >= 7.0 
+				AND ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 8.5
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=7_and_<8.5'
+			ELSE ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=8.5'
+		END)::VARCHAR AS gpa_status
+	FROM grade g
+	LEFT JOIN course c 
+		ON c.course_id = g.course_id AND c.optional_28 != 'NO'
+	WHERE g.student_id LIKE student_pattern 
+	AND g.school_year = ANY(school_year_param) -- Kiểm tra nhiều năm học
+	GROUP BY  g.student_id;
+END;
+$$; 
+
+/* As we have already create view table so we don't really need to inject these code*/
+/*DROP VIEW IF EXISTS gpa_kdl;*/
+
+CREATE VIEW gpa_kdl AS
+SELECT 
+	first.student_id AS student_id,
+	first.gpa AS first_gpa,
+	first.gpa_status as first_gpa_status,
+	second.gpa AS second_gpa,
+	second.gpa_status AS second_gpa_status,
+	third.gpa AS third_gpa,
+	third.gpa_status AS third_gpa_status,
+	fourth.gpa AS fourth_gpa,
+	fourth.gpa_status AS fourth_gpa_status
+FROM 
+	calculate_gpa(ARRAY['2021-2022'] ,'2128%%') AS first
+LEFT JOIN 
+	calculate_gpa(ARRAY['2021-2022', '2022-2023'], '2128%%') AS second
+	ON first.student_id = second.student_id
+LEFT JOIN
+	calculate_gpa(ARRAY['2021-2022', '2022-2023', '2023-2024'],'2128%%') AS third
+	ON first.student_id = third.student_id
+LEFT JOIN
+	calculate_gpa(ARRAY['2021-2022', '2022-2023', '2023-2024', '2024-2025'], '2128%%') AS fourth
+	ON first.student_id = fourth.student_id;
+
+
+/*---------------------------------------------------------*/
+DROP FUNCTION IF EXISTS calculate_gpa(VARCHAR, VARCHAR);
+
+CREATE OR REPLACE FUNCTION calculate_gpa(
+	school_year_param VARCHAR[],
+	student_pattern VARCHAR
+)
+RETURNS TABLE(
+	student_id CHAR(8), 
+	gpa FLOAT, 
+	gpa_status VARCHAR
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	RETURN QUERY 
+	SELECT 
+		g.student_id,
+		ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT AS gpa,
+		(CASE 
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 5.0 
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa<5'
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT >= 5.0 
+				AND ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 7.0
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=5_and_<7'
+			WHEN ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT >= 7.0 
+				AND ROUND(SUM(g.final_score * c.credits) / SUM(c.credits), 2)::FLOAT < 8.5
+				THEN ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=7_and_<8.5'
+			ELSE ARRAY_TO_STRING(school_year_param, ', ') || '_gpa>=8.5'
+		END)::VARCHAR AS gpa_status
+	FROM grade g
+	LEFT JOIN course c 
+		ON c.course_id = g.course_id AND c.optional_11 != 'NO'
+	WHERE g.student_id LIKE student_pattern 
+	AND g.school_year = ANY(school_year_param) -- Kiểm tra nhiều năm học
+	GROUP BY g.student_id;
+END;
+$$; 
+
+
+/*DROP VIEW IF EXISTS gpa_tth;*/
+
+CREATE VIEW gpa_tth AS
+SELECT 
+	first.student_id AS student_id,
+	first.gpa AS first_gpa,
+	first.gpa_status as first_gpa_status,
+	second.gpa AS second_gpa,
+	second.gpa_status AS second_gpa_status,
+	third.gpa AS third_gpa,
+	third.gpa_status AS third_gpa_status,
+	fourth.gpa AS fourth_gpa,
+	fourth.gpa_status AS fourth_gpa_status
+FROM 
+	calculate_gpa(ARRAY['2021-2022'] ,'2111%%') AS first
+LEFT JOIN 
+	calculate_gpa(ARRAY['2021-2022', '2022-2023'], '2111%%') AS second
+	ON first.student_id = second.student_id
+LEFT JOIN
+	calculate_gpa(ARRAY['2021-2022', '2022-2023', '2023-2024'],'2111%%') AS third
+	ON first.student_id= third.student_id
+LEFT JOIN
+	calculate_gpa(ARRAY['2021-2022', '2022-2023', '2023-2024', '2024-2025'], '2111%%') AS fourth
+	ON first.student_id = fourth.student_id;
+
+/* --------------------------------------------------------- */
+/*DROP VIEW IF EXISTS bar_chart;*/
+
+CREATE VIEW bar_chart AS
+select tth.student_id,
+	tth.first_gpa_status,
+	tth.second_gpa_status,
+	tth.third_gpa_status,
+	tth.fourth_gpa_status,
+	foa.application_id
+from gpa_tth tth
+left join student s on tth.student_id = s.student_id
+left join form_of_application foa on s.application_id = foa.application_id
+UNION
+select kdl.student_id,
+	kdl.first_gpa_status,
+	kdl.second_gpa_status,
+	kdl.third_gpa_status,
+	kdl.fourth_gpa_status,
+	foa.application_id
+from gpa_kdl kdl
+left join student s on kdl.student_id = s.student_id
+left join form_of_application foa on s.application_id = foa.application_id;
+
+SELECT application_id, 
+	first_gpa_status, count(first_gpa_status) as total_first_status,
+	second_gpa_status, count(second_gpa_status) as total_second_status,
+	third_gpa_status, count(third_gpa_status) as total_third_status,
+	fourth_gpa_status, count(fourth_gpa_status) as total_fourth_status 
+FROM bar_chart
+group by application_id, first_gpa_status, second_gpa_status, third_gpa_status, fourth_gpa_status;

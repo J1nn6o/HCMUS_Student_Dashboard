@@ -171,7 +171,6 @@ try:
                 kdl_student_dict
             )
 
-
     # Register callbacks
     register_callbacks(app, overview, math, gpa_foa_df, COLOR_SCALE_BAR_CHART, gpa_status_dict, radar_math_df, kdl, radar_kdl_df, total_math_course_num_df, total_kdl_course_num_df, total_course_num_per_student_df, student_df)
 

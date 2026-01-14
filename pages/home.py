@@ -615,4 +615,3 @@ def layout(donut_chart, overview_bar_chart, gpa_column_list,  foa_dict, sankey_f
     ]
 
     return layout
-

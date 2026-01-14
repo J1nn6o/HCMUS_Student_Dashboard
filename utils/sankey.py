@@ -273,6 +273,3 @@ class SankeyDiagram:
         )
 
         return fig
-    
-
-
